@@ -102,7 +102,7 @@ void VonicRewriteAudioProcessor::prepareToPlay (double sampleRate, int samplesPe
     set.sampleRate = sampleRate;
     left.prepare(set);
     right.prepare(set);
-    auto chainSettings = getChainSettings(bleh);
+    auto chainSettings = getFilterSet(bleh);
     auto peakCoefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(sampleRate,chainSettings.peakFreq,chainSettings.peakQual,juce::Decibels::decibelsToGain(chainSettings.peakGain));
     *left.get<ChainPositions::Peak>().coefficients = *peakCoefficients;
     *right.get<ChainPositions::Peak>().coefficients = *peakCoefficients;
@@ -152,14 +152,107 @@ void VonicRewriteAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // guaranteed to be empty - they may contain garbage).
     // This is here to avoid people getting screaming feedback
     // when they first compile a plugin, but obviously you don't need to keep
-    // this code if your algorithm always overwrites all the output channels.
+    // this code if your algorithm always overwrites all the output channels.f
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
-    auto chainSettings = getChainSettings(bleh);
+    auto chainSettings = getFilterSet(bleh);
     auto peakCoefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(getSampleRate(),chainSettings.peakFreq,chainSettings.peakQual,juce::Decibels::decibelsToGain(chainSettings.peakGain));
 
+    auto cutCoefficients = juce::dsp::FilterDesign<float>::designIIRHighpassHighOrderButterworthMethod(chainSettings.lowCutFreq,getSampleRate(),(chainSettings.lowCutSlope+1)*2);
+    
+    *left.get<ChainPositions::Peak>().coefficients = *peakCoefficients;
+    *right.get<ChainPositions::Peak>().coefficients = *peakCoefficients;
+    auto& leftLowCut = left.get<ChainPositions::LowCut>();
 
+
+    leftLowCut.setBypassed<0>(true);
+    leftLowCut.setBypassed<1>(true);
+    leftLowCut.setBypassed<2>(true);
+    leftLowCut.setBypassed<3>(true);
+
+    switch(chainSettings.lowCutSlope)
+    {
+        case grad12:
+        {
+            *leftLowCut.get<0>().coefficients = *cutCoefficients[0];
+            leftLowCut.setBypassed<0>(false);
+            break;
+        }
+        case grad24:
+        {
+            *leftLowCut.get<0>().coefficients = *cutCoefficients[0];
+            leftLowCut.setBypassed<0>(false);
+            *leftLowCut.get<1>().coefficients = *cutCoefficients[1];
+            leftLowCut.setBypassed<1>(false);
+            break;
+        }
+        case grad36:{
+            *leftLowCut.get<0>().coefficients = *cutCoefficients[0];
+            leftLowCut.setBypassed<0>(false);
+            *leftLowCut.get<1>().coefficients = *cutCoefficients[1];
+            leftLowCut.setBypassed<1>(false);
+            *leftLowCut.get<2>().coefficients = *cutCoefficients[2];
+            leftLowCut.setBypassed<2>(false);
+            break;
+        }
+        case grad48:
+        {
+            *leftLowCut.get<0>().coefficients = *cutCoefficients[0];
+            leftLowCut.setBypassed<0>(false);
+            *leftLowCut.get<1>().coefficients = *cutCoefficients[1];
+            leftLowCut.setBypassed<1>(false);
+            *leftLowCut.get<2>().coefficients = *cutCoefficients[2];
+            leftLowCut.setBypassed<2>(false);
+            *leftLowCut.get<3>().coefficients = *cutCoefficients[3];
+            leftLowCut.setBypassed<3>(false);
+            break;
+        }
+    }
+    auto& rightLowCut = right.get<ChainPositions::LowCut>();
+    rightLowCut.setBypassed<0>(true);
+    rightLowCut.setBypassed<1>(true);
+    rightLowCut.setBypassed<2>(true);
+    rightLowCut.setBypassed<3>(true);
+
+    switch(chainSettings.lowCutSlope)
+    {
+        case grad12:
+        {
+            *rightLowCut.get<0>().coefficients = *cutCoefficients[0];
+            rightLowCut.setBypassed<0>(false);
+            break;
+        }
+        case grad24:
+        {
+            *rightLowCut.get<0>().coefficients = *cutCoefficients[0];
+            rightLowCut.setBypassed<0>(false);
+            *rightLowCut.get<1>().coefficients = *cutCoefficients[1];
+            rightLowCut.setBypassed<1>(false);
+            break;
+        }
+        case grad36:{
+            *rightLowCut.get<0>().coefficients = *cutCoefficients[0];
+            rightLowCut.setBypassed<0>(false);
+            *rightLowCut.get<1>().coefficients = *cutCoefficients[1];
+            rightLowCut.setBypassed<1>(false);
+            *rightLowCut.get<2>().coefficients = *cutCoefficients[2];
+            rightLowCut.setBypassed<2>(false);
+            break;
+        }
+        case grad48:
+        {
+            *rightLowCut.get<0>().coefficients = *cutCoefficients[0];
+            rightLowCut.setBypassed<0>(false);
+            *rightLowCut.get<1>().coefficients = *cutCoefficients[1];
+            rightLowCut.setBypassed<1>(false);
+            *rightLowCut.get<2>().coefficients = *cutCoefficients[2];
+            rightLowCut.setBypassed<2>(false);
+            *rightLowCut.get<3>().coefficients = *cutCoefficients[3];
+            rightLowCut.setBypassed<3>(false);
+            break;
+        }
+    }
     juce::dsp::AudioBlock<float> block(buffer);
     auto leftBlock = block.getSingleChannelBlock(0);
     auto rightBlock = block.getSingleChannelBlock(1);
@@ -198,16 +291,16 @@ void VonicRewriteAudioProcessor::setStateInformation (const void* data, int size
     // whose contents will have been created by the getStateInformation() call.
     
 }
-ChainSettings getChainSettings(juce::AudioProcessorValueTreeState& bleh){
-    ChainSettings props;
+FilterSet getFilterSet(juce::AudioProcessorValueTreeState& bleh){
+    FilterSet props;
 
     props.lowCutFreq = bleh.getRawParameterValue("HighPass")->load();
     props.highCutFreq = bleh.getRawParameterValue("LowPass")->load();
     props.peakFreq = bleh.getRawParameterValue("Peak")->load();
     props.peakGain = bleh.getRawParameterValue("Gain")->load();
     props.peakQual = bleh.getRawParameterValue("Quality")->load();
-    props.lowCutSlope = bleh.getRawParameterValue("HighPassGrad")->load();
-    props.highCutSlope = bleh.getRawParameterValue("LowPassGrad")->load();
+    props.lowCutSlope = static_cast<Gradient>(bleh.getRawParameterValue("HighPassGrad")->load());
+    props.highCutSlope = static_cast<Gradient>(bleh.getRawParameterValue("LowPassGrad")->load());
     return props;
 }
 juce::AudioProcessorValueTreeState::ParameterLayout VonicRewriteAudioProcessor::createParams(){

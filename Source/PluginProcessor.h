@@ -10,10 +10,16 @@
 #pragma once
 
 #include <JuceHeader.h>
-struct ChainSettings{
+enum Gradient{
+  grad12,
+  grad24,
+  grad36,
+  grad48
+};
+struct FilterSet{
   float peakFreq {0},peakGain{0},peakQual{1.f};
   float lowCutFreq {0},highCutFreq {0};
-  int lowCutSlope {0},highCutSlope{0};
+  Gradient lowCutSlope {Gradient::grad12},highCutSlope{Gradient::grad12};
 };
 
 ChainSettings getChainSettings(juce::AudioProcessorValueTreeState& bleh);
